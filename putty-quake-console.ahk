@@ -81,7 +81,7 @@ Menu, Tray, Add, Pinned, TogglePinned
 if (pinned)
 	Menu, Tray, Check, Pinned
 Menu, Tray, Add
-Menu, Tray, Add, Options, ShowOptionsGui
+;Menu, Tray, Add, Options, ShowOptionsGui
 Menu, Tray, Add, About, AboutDlg
 Menu, Tray, Add, Reload, ReloadSub
 Menu, Tray, Add, Exit, ExitSub
