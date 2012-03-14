@@ -1,4 +1,4 @@
-Version of [mintty-quake-console](https://github.com/lonepie/mintty-quake-console)
+Version of [mintty-quake-console](https://github.com/lonepie/mintty-quake-console) designed for PuTTY
 
 ## Requirements
 [PuTTY](http://www.chiark.greenend.org.uk/~sgtatham/putty/) or [KiTTY](http://kitty.9bis.com/)
@@ -11,7 +11,6 @@ Version of [mintty-quake-console](https://github.com/lonepie/mintty-quake-consol
 4. Use configured keybinding to show/hide PuTTY
 
 ## TODO
-* Remove mintty options
 * Launch putty session from the script
 * GUI for settings
 
