@@ -37,7 +37,7 @@ SetWinDelay, -1
 ;*******************************************************************************
 VERSION := 1.0
 iniFile := "putty-quake-console.ini"
-IniRead, puttyPath, %iniFile%, General, putty_path, % cygwinBinDir . "\putty.exe"
+IniRead, puttyPath, %iniFile%, General, putty_path, "putty.exe"
 IniRead, puttyType, %iniFile%, General, putty_type, "PuTTY"
 IniRead, sessionMode, %iniFile%, General, session_mode, "registry"
 IniRead, sessionPath, %iniFile%, General, session_path, "HKEY_CURRENT_USER\Software\SimonTatham\PuTTY\Sessions"
