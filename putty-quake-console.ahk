@@ -39,20 +39,22 @@ SetWorkingDir %A_ScriptDir%
 VERSION := 1.0
 
 ; Registry Paths
-puttyRegPath = "HKEY_CURRENT_USER\Software\SimonTatham\PuTTY\Sessions"
-kittyRegPath = "HKEY_CURRENT_USER\Software\9bis.com\KiTTY\Sessions"
+puttyRegPath := "Software\SimonTatham\PuTTY\Sessions"
+kittyRegPath := "Software\9bis.com\KiTTY\Sessions"
 
 ; Default paths
-defaultSessionStorePath = ""
-dirSessionsPath = "Sessions"
+defaultSessionStorePath := ""
+dirSessionsPath := "Sessions"
 
 
 iniFile := "putty-quake-console.ini"
-IniRead, clientPath, %iniFile%, General, client_path, "putty.exe"
 IniRead, clientType, %iniFile%, General, client_type, "PuTTY"
+IniRead, clientPath, %iniFile%, General, client_path, ""
 IniRead, sessionStore, %iniFile%, General, session_store, "registry"
 if(sessionStore = "registry") {
     defaultSessionStorePath := clientType = "putty" ? puttyRegPath : kittyRegPath
+} else {
+    defaultSessionStorePath := "Sessions"
 }
 IniRead, sessionStorePath, %iniFile%, General, session_store_path, %defaultSessionStorePath%
 IniRead, clientArgs, %iniFile%, General, client_args, ""
@@ -103,7 +105,10 @@ if(clientArgs)
 heightConsoleWindow := initialHeight
 widthConsoleWindow := initialWidth
 
-isVisible := False
+isVisible := !startHidden
+
+sessions := GetSessions()
+SessionsMenu(sessions)
 
 ;*******************************************************************************
 ;				Hotkeys
@@ -119,6 +124,8 @@ Menu, Tray, NoStandard
 ; Menu, Tray, MainWindow
 Menu, Tray, Tip, putty-quake-console %VERSION%
 Menu, Tray, Click, 1
+
+Menu, Tray, Add ; seperator
 Menu, Tray, Add, Show/Hide, ToggleVisible
 Menu, Tray, Default, Show/Hide
 Menu, Tray, Add, Enabled, ToggleScriptState
@@ -126,7 +133,8 @@ Menu, Tray, Check, Enabled
 Menu, Tray, Add, Auto-Hide, ToggleAutoHide
 if (autohide)
     Menu, Tray, Check, Auto-Hide
-Menu, Tray, Add
+Menu, Tray, Add ; seperator
+Menu, Tray, Add, Sessions, :SessionsMenu
 ;Menu, Tray, Add, Options, ShowOptionsGui
 Menu, Tray, Add, About, AboutDlg
 Menu, Tray, Add, Reload, ReloadSub
@@ -143,16 +151,18 @@ init()
 	initCount++
 	; get last active window
 	WinGet, hw_current, ID, A
-	if !WinExist("ahk_class" . clientType) {
-		;Run %clientPath_args%, %cygwinBinDir%, Hide, hw_client
-		Run %clientPath_args%
-		WinWait ahk_class %clientType%
+    hwnd_client = WinExist("ahk_class" . clientType)
+	if (!hwnd_client) {
+		Run, %clientPath_args%,,,pid_client
+        WinWait ahk_pid %pid_client%
+		;WinWait ahk_class %clientType%
 	}
 	else {
-		WinGet, hw_client, PID, ahk_class %clientType%
+		WinGet, pid_client, PID, ahk_class %clientType%
 	}
+    GroupAdd, MyAppWindows, ahk_pid %pid_client%
 
-	WinGetPos, OrigXpos, OrigYpos, OrigWinWidth, OrigWinHeight, ahk_pid %hw_client%
+	WinGetPos, OrigXpos, OrigYpos, OrigWinWidth, OrigWinHeight, ahk_pid %pid_client%
 	toggleScript("init")
 }
 
@@ -160,9 +170,9 @@ toggle()
 {
 	global
 
-	IfWinActive ahk_pid %hw_client%
+	IfWinActive ahk_pid %pid_client%
 	{
-		Slide("ahk_pid" . hw_client, "Out")
+		Animate("ahk_pid" . pid_client, "Out")
 		; reset focus to last active window
 		WinActivate, ahk_id %hw_current%
 	}
@@ -171,12 +181,12 @@ toggle()
 		; get last active window
 		WinGet, hw_current, ID, A
 
-		WinActivate ahk_pid %hw_client%
-		Slide("ahk_pid" . hw_client, "In")
+		WinActivate ahk_pid %pid_client%
+		Animate("ahk_pid" . pid_client, "In")
 	}
 }
 
-Slide(Window, Dir)
+Animate(Window, Dir)
 {
     global initialWidth, animationModeFade, animationModeSlide, animationStep, animationTimeout, autohide, isVisible, currentTrans, initialTrans
     WinGetPos, Xpos, Ypos, WinWidth, WinHeight, %Window%
@@ -251,28 +261,28 @@ Slide(Window, Dir)
 toggleScript(state) {
     ; enable/disable script effects, hotkeys, etc
     global
-    ; WinGetPos, Xpos, Ypos, WinWidth, WinHeight, ahk_pid %hw_client%
+    ; WinGetPos, Xpos, Ypos, WinWidth, WinHeight, ahk_pid %pid_client%
     if(state = "on" or state = "init") {
-        If !WinExist("ahk_pid" . hw_client) {
+        If !WinExist("ahk_pid" . pid_client) {
             init()
             return
         }
 
         ; use putty's transparency setting, if it's set
-        WinGet, puttyTrans, Transparent, ahk_pid %hw_client%
+        WinGet, puttyTrans, Transparent, ahk_pid %pid_client%
         if (puttyTrans <> "")
             initialTrans:=puttyTrans
-        WinSet, Transparent, %initialTrans%, ahk_pid %hw_client%
+        WinSet, Transparent, %initialTrans%, ahk_pid %pid_client%
         currentTrans:=initialTrans
 
-        WinHide ahk_pid %hw_client%
-        WinSet, Style, -0xC40000, ahk_pid %hw_client% ; hide window borders and caption/title
+        WinHide ahk_pid %pid_client%
+        WinSet, Style, -0xC40000, ahk_pid %pid_client% ; hide window borders and caption/title
 
         VirtScreenPos(ScreenLeft, ScreenTop, ScreenWidth, ScreenHeight)
 
         width := ScreenWidth * widthConsoleWindow / 100
         left := ScreenLeft + ((ScreenWidth - width) /  2)
-        WinMove, ahk_pid %hw_client%, , %left%, -%heightConsoleWindow%, %width%, %heightConsoleWindow% ; resize/move
+        WinMove, ahk_pid %pid_client%, , %left%, -%heightConsoleWindow%, %width%, %heightConsoleWindow% ; resize/move
 
         scriptEnabled := True
         Menu, Tray, Check, Enabled
@@ -281,26 +291,26 @@ toggleScript(state) {
             return
         }
 
-        WinShow ahk_pid %hw_client%
-        WinActivate ahk_pid %hw_client%
-        Slide("ahk_pid" . hw_client, "In")
+        WinShow ahk_pid %pid_client%
+        WinActivate ahk_pid %pid_client%
+        Animate("ahk_pid" . pid_client, "In")
     }
     else if (state = "off") {
-            WinSet, Style, +0xC40000, ahk_pid %hw_client% ; show window borders and caption/title
+        WinSet, Style, +0xC40000, ahk_pid %pid_client% ; show window borders and caption/title
         if (OrigYpos >= 0)
-            WinMove, ahk_pid %hw_client%, , %OrigXpos%, %OrigYpos%, %OrigWinWidth%, %OrigWinHeight% ; restore size / position
+            WinMove, ahk_pid %pid_client%, , %OrigXpos%, %OrigYpos%, %OrigWinWidth%, %OrigWinHeight% ; restore size / position
         else
-            WinMove, ahk_pid %hw_client%, , %OrigXpos%, 100, %OrigWinWidth%, %OrigWinHeight%
-        WinShow, ahk_pid %hw_client% ; show window
+            WinMove, ahk_pid %pid_client%, , %OrigXpos%, 100, %OrigWinWidth%, %OrigWinHeight%
+        WinShow, ahk_pid %pid_client% ; show window
         scriptEnabled := False
         Menu, Tray, Uncheck, Enabled
     }
 }
 
 HideWhenInactive:
-    IfWinNotActive ahk_pid %hw_client%
+    IfWinNotActive ahk_pid %pid_client%
     {
-        Slide("ahk_pid" . hw_client, "Out")
+        Animate("ahk_pid" . pid_client, "Out")
         SetTimer, HideWhenInactive, Off
     }
 return
@@ -308,12 +318,12 @@ return
 ToggleVisible:
     if(isVisible)
     {
-        Slide("ahk_pid" . hw_client, "Out")
+        Animate("ahk_pid" . pid_client, "Out")
     }
     else
     {
-        WinActivate ahk_pid %hw_client%
-        Slide("ahk_pid" . hw_client, "In")
+        WinActivate ahk_pid %pid_client%
+        Animate("ahk_pid" . pid_client, "In")
     }
 return
 
@@ -332,7 +342,7 @@ return
 
 ConsoleHotkey:
 	If (scriptEnabled) {
-		IfWinExist ahk_pid %hw_client%
+		IfWinExist ahk_pid %pid_client%
 		{
 			toggle()
 		}
@@ -365,31 +375,42 @@ ShowOptionsGui:
 	OptionsGui()
 return
 
+LaunchSessionFromMenu:
+    sessionName := A_ThisMenuItem
+    MsgBox, 4, Launch Session, Launch Session "%A_ThisMenuItem%"?
+    IfMsgBox, No
+        return
+    runThis := clientPath . " -load """ . sessionName . """"
+    if(clientArgs)
+        runThis .= " " . clientArgs
+return
+
 ;*******************************************************************************
 ;				Extra Hotkeys
 ;*******************************************************************************
-#IfWinActive ahk_class putty
+;#IfWinActive ahk_class putty
+#IfWinActive ahk_group MyAppWindows
 ; IncreaseHeight:
 ^!NumpadAdd::
 ^+=::
-    if(WinActive("ahk_pid" . hw_client)) {
+    ;if(WinActive("ahk_pid" . pid_client)) {
 
     VirtScreenPos(ScreenLeft, ScreenTop, ScreenWidth, ScreenHeight)
-        if(heightConsoleWindow < ScreenHeight) {
-            heightConsoleWindow += animationStep
-            WinMove, ahk_pid %hw_client%,,,,, heightConsoleWindow
-        }
+    if(heightConsoleWindow < ScreenHeight) {
+        heightConsoleWindow += animationStep
+        WinMove, ahk_pid %pid_client%,,,,, heightConsoleWindow
     }
+    ;}
 return
 ; DecreaseHeight:
 ^!NumpadSub::
 ^+-::
-    if(WinActive("ahk_pid" . hw_client)) {
-        if(heightConsoleWindow > 100) {
-            heightConsoleWindow -= animationStep
-            WinMove, ahk_pid %hw_client%,,,,, heightConsoleWindow
-        }
+    ;if(WinActive("ahk_pid" . pid_client)) {
+    if(heightConsoleWindow > 100) {
+        heightConsoleWindow -= animationStep
+        WinMove, ahk_pid %pid_client%,,,,, heightConsoleWindow
     }
+    ;}
 return
 #IfWinActive
 
@@ -398,8 +419,12 @@ return
 ;*******************************************************************************
 SaveSettings() {
     global
-    IniWrite, %clientPath%, %iniFile%, General, putty_path
-    IniWrite, %clientArgs%, %iniFile%, General, putty_args
+    IniWrite, %clientType%, %iniFile%, General, client_type
+    IniWrite, %clientPath%, %iniFile%, General, client_path
+    IniWrite, %clientArgs%, %iniFile%, General, client_args
+    IniWrite, %sessionStore%, %iniFile%, General, session_store
+    IniWrite, %sessionStorePath%, %iniFile%, General, session_store_path
+    IniWrite, %defaultSession%, %iniFile%, General, default_session
     IniWrite, %consoleHotkey%, %iniFile%, General, hotkey
     IniWrite, %startWithWindows%, %iniFile%, Display, start_with_windows
     IniWrite, %startHidden%, %iniFile%, Display, start_hidden
@@ -433,39 +458,42 @@ CheckWindowsStartup(enable) {
 OptionsGui() {
     global
     If not WinExist("ahk_id" GuiID) {
-        Gui, Add, GroupBox, x12 y10 w450 h110 , General
-            Gui, Add, GroupBox, x12 y130 w450 h250 , Display
-        Gui, Add, Button, x242 y390 w100 h30 Default, Save
-        Gui, Add, Button, x362 y390 w100 h30 , Cancel
-        Gui, Add, Text, x22 y30 w70 h20 , PuTTY Path:
-        Gui, Add, Edit, x92 y30 w250 h20 VclientPath, %clientPath%
-        Gui, Add, Button, x352 y30 w100 h20, Browse
-        Gui, Add, Text, x22 y60 w100 h20 , PuTTY Arguments:
-        Gui, Add, Edit, x122 y60 w330 h20 VclientArgs, %clientArgs%
-        Gui, Add, Text, x22 y90 w100 h20 , Hotkey Trigger:
-        Gui, Add, Hotkey, x122 y90 w100 h20 VconsoleHotkey, %consoleHotkey%
-        Gui, Add, CheckBox, x22 y150 w100 h30 VstartHidden Checked%startHidden%, Start Hidden
-        Gui, Add, CheckBox, x22 y180 w150 h30 Vautohide Checked%autohide%, Auto-Hide when focus is lost
-        Gui, Add, CheckBox, x22 y210 w120 h30 VstartWithWindows Checked%startWithWindows%, Start With Windows
-        Gui, Add, Text, x22 y250 w100 h20 , Initial Height (px):
-        Gui, Add, Edit, x22 y270 w100 h20 VinitialHeight, %initialHeight%
-        Gui, Add, Text, x22 y300 w115 h20 , Initial Width (percent):
-        Gui, Add, Edit, x22 y320 w100 h20 VinitialWidth, %initialWidth%
-
-        Gui, Add, GroupBox, x232 y150 w220 h45 , Animation Type:
-        Gui, Add, Radio, x252 y168 w70 h20 VanimationModeSlide group Checked%animationModeSlide%, Slide
-        Gui, Add, Radio, x332 y168 w70 h20 VanimationModeFade Checked%animationModeFade%, Fade
-
-        Gui, Add, Text, x232 y210 w220 h20 , Animation Delta (px):
-        Gui, Add, Text, x232 y260 w220 h20 , Animation Time (ms):
-        Gui, Add, Slider, x232 y230 w220 h30 VanimationStep Range1-100 TickInterval20 , %animationStep%
-        Gui, Add, Slider, x232 y280 w220 h30 VanimationTimeout Range1-50 TickInterval10, %animationTimeout%
-        Gui, Add, Text, x232 y310 w220 h20 , Window Transparency (`%):
-        Gui, Add, Slider, x232 y330 w220 h30 VinitialTrans Range100-255 , %initialTrans%
+        Gui, Add, GroupBox, x12 y10 w450 h220 , General
+        Gui, Add, GroupBox, x12 y240 w450 h250 , Display
+        Gui, Add, Button, x242 y500 w100 h30 Default, Save
+        Gui, Add, Button, x362 y500 w100 h30 , Cancel
+        Gui, Add, GroupBox, x22 y29 w430 h50 , Client Type:
+        Gui, Add, Radio, x42 y49 w100 h20 VclientTypePuTTY group Checked%isClientTypePuTTY%, PuTTY
+        Gui, Add, Radio, x162 y49 w90 h20 VclientTypeKiTTY Checked%isClientTypeKiTTY%, KiTTY
+        Gui, Add, Text, x22 y93 w70 h20 , Client Path:
+        Gui, Add, Edit, x92 y90 w250 h20 VclientPath, %clientPath%
+        Gui, Add, Button, x352 y90 w100 h20 , Browse
+        Gui, Add, Text, x22 y122 w130 h20 , Command-Line Arguments:
+        Gui, Add, Edit, x162 y119 w290 h20 VclientArgs, %clientArgs%
+        Gui, Add, Text, x22 y149 w130 h20 , Default Session Name:
+        Gui, Add, Edit, x162 y149 w290 h20 , VdefaultSessionName, %defaultSession%
+        Gui, Add, Text, x22 y193 w100 h20 , Trigger Hotkey:
+        Gui, Add, Hotkey, x122 y190 w100 h20 VconsoleHotkey, %consoleHotkey%
+        Gui, Add, CheckBox, x22 y260 w100 h30 VstartHidden Checked%startHidden%, Start Hidden
+        Gui, Add, CheckBox, x22 y290 w150 h30 Vautohide Checked%autohide%, Auto-Hide when focus is lost
+        Gui, Add, CheckBox, x22 y320 w120 h30 VstartWithWindows Checked%startWithWindows%, Start With Windows
+        Gui, Add, Text, x22 y360 w100 h20 , Initial Height (px):
+        Gui, Add, Edit, x22 y380 w100 h20 VinitialHeight, %initialHeight%
+        Gui, Add, Text, x22 y410 w115 h20 , Initial Width (percent):
+        Gui, Add, Edit, x22 y430 w100 h20 VinitialWidth, %initialWidth%
+        Gui, Add, GroupBox, x232 y260 w220 h45 , Animation Type:
+        Gui, Add, Radio, x252 y278 w70 h20 VanimationModeSlide group Checked%animationModeSlide%, Slide
+        Gui, Add, Radio, x332 y278 w70 h20 VanimationModeFade Checked%animationModeFade%, Fade
+        Gui, Add, Text, x232 y320 w220 h20 , Animation Delta (px):
+        Gui, Add, Text, x232 y370 w220 h20 , Animation Time (ms):
+        Gui, Add, Slider, x232 y340 w220 h30 VanimationStep Range1-100 TickInterval20, %animationStep%
+        Gui, Add, Slider, x232 y390 w220 h30 VanimationTimeout Range1-50 TickInterval10, %animationTimeout%
+        Gui, Add, Text, x232 y420 w220 h20 , Window Transparency (`%):
+        Gui, Add, Slider, x232 y440 w220 h30 VinitialTrans Range100-255, %initialTrans%
         ; Gui, Add, Text, x232 y320 w220 h20 +Center, Animation Speed = Delta / Time
     }
     ; Generated using SmartGUI Creator 4.0
-    Gui, Show, h440 w482, TerminalHUD Options
+    Gui, Show, h555 w482, putty-quake-console Options
     Gui, +LastFound
     GuiID := WinExist()
 
@@ -485,7 +513,7 @@ OptionsGui() {
     return
 
     ButtonBrowse:
-        FileSelectFile, SelectedPath, 3, %A_MyDocuments%, Path to putty.exe/kitty.exe, Executables (*.exe)
+        FileSelectFile, SelectedPath, 3, %A_ScriptDir%, Path to putty.exe/kitty.exe, Executables (*.exe)
         if SelectedPath !=
             GuiControl,, clientPath, %SelectedPath%
     return
@@ -501,7 +529,30 @@ OptionsGui() {
 ;               Utility
 ;*******************************************************************************
 GetSessions() {
+    global sessionStore, sessionStorePath
+    arrSessions := []
+    if(sessionStore = "registry") {
+        Loop, HKCU, %sessionStorePath%, 2
+        {
+            StringReplace, sessionName, A_LoopRegName, `%20, %A_SPACE%, 1
+            arrSessions.Insert(sessionName)
+        }
+    }
+    else if(sessionStore = "dir") {
+        Loop, %sessionStorePath%\*
+        {
+            StringReplace, sessionName, A_LoopFileName, `%20, %A_SPACE%, 1
+            arrSessions.Insert(sessionName)
+        }
+    }
+    return arrSessions
+}
 
+SessionsMenu(arrSessions) {
+    For index, value in arrSessions {
+        Menu, SessionsMenu, Add, arrSessions[index], LaunchSessionFromMenu
+        Menu, SessionsMenu, Icon, arrSessions[index], %clientPath%
+    }
 }
 
 ; Gets the edge that the taskbar is docked to.  Returns:
