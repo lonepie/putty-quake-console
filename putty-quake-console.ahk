@@ -76,10 +76,14 @@ IfNotExist %iniFile%
 }
 
 if(clientType = "putty") {
-    clientType = "PuTTY" ; case sensitive for ahk_class
+    clientType := "PuTTY" ; case sensitive for ahk_class
+    isClientTypePuTTY := 1
+    isClientTypeKiTTY := 0
 }
 else if(clientType = "kitty") {
-    clientType = "KiTTY"
+    clientType := "KiTTY"
+    isClientTypeKiTTY := 1
+    isClientTypePuTTY := 0
 }
 else {
     ; client type is invalid - throw error
@@ -125,7 +129,7 @@ Menu, Tray, NoStandard
 Menu, Tray, Tip, putty-quake-console %VERSION%
 Menu, Tray, Click, 1
 
-Menu, Tray, Add ; seperator
+; Menu, Tray, Add ; seperator
 Menu, Tray, Add, Show/Hide, ToggleVisible
 Menu, Tray, Default, Show/Hide
 Menu, Tray, Add, Enabled, ToggleScriptState
@@ -140,8 +144,9 @@ Menu, Tray, Add, About, AboutDlg
 Menu, Tray, Add, Reload, ReloadSub
 Menu, Tray, Add, Exit, ExitSub
 
-init()
-return
+#Persistent
+; init()
+; return
 ;*******************************************************************************
 ;				Functions / Labels
 ;*******************************************************************************
@@ -383,6 +388,7 @@ LaunchSessionFromMenu:
     runThis := clientPath . " -load """ . sessionName . """"
     if(clientArgs)
         runThis .= " " . clientArgs
+    MsgBox, I would run: %runThis%
 return
 
 ;*******************************************************************************
@@ -550,8 +556,9 @@ GetSessions() {
 
 SessionsMenu(arrSessions) {
     For index, value in arrSessions {
-        Menu, SessionsMenu, Add, arrSessions[index], LaunchSessionFromMenu
-        Menu, SessionsMenu, Icon, arrSessions[index], %clientPath%
+        session := arrSessions[index]
+        Menu, SessionsMenu, Add, %session%, LaunchSessionFromMenu
+        Menu, SessionsMenu, Icon, %session%, terminal.ico
     }
 }
 
