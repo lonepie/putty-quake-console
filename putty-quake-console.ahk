@@ -43,7 +43,7 @@ puttyRegPath := "Software\SimonTatham\PuTTY\Sessions"
 kittyRegPath := "Software\9bis.com\KiTTY\Sessions"
 
 ; Default paths
-defaultSessionStorePath := ""
+autoStartSessionStorePath := ""
 dirSessionsPath := "Sessions"
 
 
@@ -52,13 +52,13 @@ IniRead, clientType, %iniFile%, General, client_type, "PuTTY"
 IniRead, clientPath, %iniFile%, General, client_path, ""
 IniRead, sessionStore, %iniFile%, General, session_store, "registry"
 if(sessionStore = "registry") {
-    defaultSessionStorePath := clientType = "putty" ? puttyRegPath : kittyRegPath
+    autoStartSessionStorePath := clientType = "putty" ? puttyRegPath : kittyRegPath
 } else {
-    defaultSessionStorePath := "Sessions"
+    autoStartSessionStorePath := "Sessions"
 }
-IniRead, sessionStorePath, %iniFile%, General, session_store_path, %defaultSessionStorePath%
+IniRead, sessionStorePath, %iniFile%, General, session_store_path, %autoStartSessionStorePath%
 IniRead, clientArgs, %iniFile%, General, client_args, ""
-IniRead, defaultSession, %iniFile%, General, default_session, ""
+IniRead, autoStartSession, %iniFile%, General, autostart_session, ""
 IniRead, consoleHotkey, %iniFile%, General, hotkey, ^``
 IniRead, startWithWindows, %iniFile%, Display, start_with_windows, 0
 IniRead, startHidden, %iniFile%, Display, start_hidden, 1
@@ -87,6 +87,8 @@ else if(clientType = "kitty") {
 }
 else {
     ; client type is invalid - throw error
+    MsgBox, SSH Client Type (PuTTY/KiTTY) not specified.
+    ExitApp, -1
 }
 
 if(!clientPath) {
@@ -94,14 +96,12 @@ if(!clientPath) {
     clientPath .= ".exe"
 }
 
+if(!FileExist(clientPath)) {
+    MsgBox, SSH Client %clientPath% not found.
+    ExitApp, -2
+}
 
 clientPath_args := clientPath
-if(defaultSession) {
-    if(InStr(defaultSession, "-load") or InStr(defaultSession, "-ssh") or InStr(defaultSession, "-telnet"))
-        clientPath_args .= " " . defaultSession
-    else
-        clientPath_args .= " -load " . defaultSession
-}
 if(clientArgs)
     clientPath_args .= " " . clientArgs
 
@@ -138,37 +138,104 @@ Menu, Tray, Add, Auto-Hide, ToggleAutoHide
 if (autohide)
     Menu, Tray, Check, Auto-Hide
 Menu, Tray, Add ; seperator
+if(sessions) {
 Menu, Tray, Add, Sessions, :SessionsMenu
-;Menu, Tray, Add, Options, ShowOptionsGui
+}
+Menu, Tray, Add, Options, ShowOptionsGui
 Menu, Tray, Add, About, AboutDlg
 Menu, Tray, Add, Reload, ReloadSub
 Menu, Tray, Add, Exit, ExitSub
 
-#Persistent
-; init()
-; return
+;~ #Persistent
+currentSessionCmd := ""
+if(autoStartSession) {
+    ;~ if(InStr(autoStartSession, "-load") or InStr(autoStartSession, "-ssh") or InStr(autoStartSession, "-telnet"))
+        ;~ clientPath_args .= " """ . autoStartSession . """"
+    ;~ else
+    runThis := clientPath_args . " -load """ . autoStartSession . """"
+    init(runThis)
+}
+return
+
 ;*******************************************************************************
 ;				Functions / Labels
 ;*******************************************************************************
-init()
+init(runCmd=0)
 {
 	global
 	initCount++
 	; get last active window
 	WinGet, hw_current, ID, A
-    hwnd_client = WinExist("ahk_class" . clientType)
-	if (!hwnd_client) {
-		Run, %clientPath_args%,,,pid_client
-        WinWait ahk_pid %pid_client%
-		;WinWait ahk_class %clientType%
-	}
-	else {
-		WinGet, pid_client, PID, ahk_class %clientType%
-	}
-    GroupAdd, MyAppWindows, ahk_pid %pid_client%
+    hwnd_client := WinExist("ahk_class" . clientType)
+    if(runCmd) {
+        if (!hwnd_client) {
+            Run, %runCmd%,,Hide,pid_client
+            WinWait ahk_pid %pid_client%
+            ;WinWait ahk_class %clientType%
+        }
+        else {
+            ; client already running, must close to launch new session
+            MsgBox, please close running session first
+            return
+            ;~ WinGet, pid_client, PID, ahk_id %hwnd_client% ; ahk_class %clientType%
+        }
+    }
+    
+    if(pid_client) {
+        GroupAdd, MyAppWindows, ahk_pid %pid_client%
 
-	WinGetPos, OrigXpos, OrigYpos, OrigWinWidth, OrigWinHeight, ahk_pid %pid_client%
-	toggleScript("init")
+        WinGetPos, OrigXpos, OrigYpos, OrigWinWidth, OrigWinHeight, ahk_pid %pid_client%
+        toggleScript("init")
+    }
+}
+
+toggleScript(state) {
+    ; enable/disable script effects, hotkeys, etc
+    global
+    ; WinGetPos, Xpos, Ypos, WinWidth, WinHeight, ahk_pid %pid_client%
+    if(state = "on" or state = "init") {
+        If !WinExist("ahk_pid" . pid_client) {
+            init()
+            return
+        }
+
+        ; use putty's transparency setting, if it's set
+        WinGet, puttyTrans, Transparent, ahk_pid %pid_client%
+        if (puttyTrans <> "")
+            initialTrans:=puttyTrans
+        WinSet, Transparent, %initialTrans%, ahk_pid %pid_client%
+        currentTrans:=initialTrans
+
+        ;~ WinHide ahk_pid %pid_client%
+        WinSet, Style, -0xC40000, ahk_pid %pid_client% ; hide window borders and caption/title
+
+        VirtScreenPos(ScreenLeft, ScreenTop, ScreenWidth, ScreenHeight)
+
+        width := ScreenWidth * widthConsoleWindow / 100
+        left := ScreenLeft + ((ScreenWidth - width) /  2)
+        WinMove, ahk_pid %pid_client%, , %left%, -%heightConsoleWindow%, %width%, %heightConsoleWindow% ; resize/move
+
+        scriptEnabled := True
+        Menu, Tray, Check, Enabled
+
+        if (state = "init" and initCount = 1 and startHidden) {
+            return
+        }
+
+        WinShow ahk_pid %pid_client%
+        WinActivate ahk_pid %pid_client%
+        Animate("ahk_pid" . pid_client, "In")
+    }
+    else if (state = "off") {
+        WinSet, Style, +0xC40000, ahk_pid %pid_client% ; show window borders and caption/title
+        if (OrigYpos >= 0)
+            WinMove, ahk_pid %pid_client%, , %OrigXpos%, %OrigYpos%, %OrigWinWidth%, %OrigWinHeight% ; restore size / position
+        else
+            WinMove, ahk_pid %pid_client%, , %OrigXpos%, 100, %OrigWinWidth%, %OrigWinHeight%
+        WinShow, ahk_pid %pid_client% ; show window
+        scriptEnabled := False
+        Menu, Tray, Uncheck, Enabled
+    }
 }
 
 toggle()
@@ -263,54 +330,7 @@ Animate(Window, Dir)
     }
 }
 
-toggleScript(state) {
-    ; enable/disable script effects, hotkeys, etc
-    global
-    ; WinGetPos, Xpos, Ypos, WinWidth, WinHeight, ahk_pid %pid_client%
-    if(state = "on" or state = "init") {
-        If !WinExist("ahk_pid" . pid_client) {
-            init()
-            return
-        }
 
-        ; use putty's transparency setting, if it's set
-        WinGet, puttyTrans, Transparent, ahk_pid %pid_client%
-        if (puttyTrans <> "")
-            initialTrans:=puttyTrans
-        WinSet, Transparent, %initialTrans%, ahk_pid %pid_client%
-        currentTrans:=initialTrans
-
-        WinHide ahk_pid %pid_client%
-        WinSet, Style, -0xC40000, ahk_pid %pid_client% ; hide window borders and caption/title
-
-        VirtScreenPos(ScreenLeft, ScreenTop, ScreenWidth, ScreenHeight)
-
-        width := ScreenWidth * widthConsoleWindow / 100
-        left := ScreenLeft + ((ScreenWidth - width) /  2)
-        WinMove, ahk_pid %pid_client%, , %left%, -%heightConsoleWindow%, %width%, %heightConsoleWindow% ; resize/move
-
-        scriptEnabled := True
-        Menu, Tray, Check, Enabled
-
-        if (state = "init" and initCount = 1 and startHidden) {
-            return
-        }
-
-        WinShow ahk_pid %pid_client%
-        WinActivate ahk_pid %pid_client%
-        Animate("ahk_pid" . pid_client, "In")
-    }
-    else if (state = "off") {
-        WinSet, Style, +0xC40000, ahk_pid %pid_client% ; show window borders and caption/title
-        if (OrigYpos >= 0)
-            WinMove, ahk_pid %pid_client%, , %OrigXpos%, %OrigYpos%, %OrigWinWidth%, %OrigWinHeight% ; restore size / position
-        else
-            WinMove, ahk_pid %pid_client%, , %OrigXpos%, 100, %OrigWinWidth%, %OrigWinHeight%
-        WinShow, ahk_pid %pid_client% ; show window
-        scriptEnabled := False
-        Menu, Tray, Uncheck, Enabled
-    }
-}
 
 HideWhenInactive:
     IfWinNotActive ahk_pid %pid_client%
@@ -430,7 +450,7 @@ SaveSettings() {
     IniWrite, %clientArgs%, %iniFile%, General, client_args
     IniWrite, %sessionStore%, %iniFile%, General, session_store
     IniWrite, %sessionStorePath%, %iniFile%, General, session_store_path
-    IniWrite, %defaultSession%, %iniFile%, General, default_session
+    IniWrite, %autoStartSession%, %iniFile%, General, autostart_session
     IniWrite, %consoleHotkey%, %iniFile%, General, hotkey
     IniWrite, %startWithWindows%, %iniFile%, Display, start_with_windows
     IniWrite, %startHidden%, %iniFile%, Display, start_hidden
@@ -476,8 +496,8 @@ OptionsGui() {
         Gui, Add, Button, x352 y90 w100 h20 , Browse
         Gui, Add, Text, x22 y122 w130 h20 , Command-Line Arguments:
         Gui, Add, Edit, x162 y119 w290 h20 VclientArgs, %clientArgs%
-        Gui, Add, Text, x22 y149 w130 h20 , Default Session Name:
-        Gui, Add, Edit, x162 y149 w290 h20 , VdefaultSessionName, %defaultSession%
+        Gui, Add, Text, x22 y149 w130 h20 , Auto-Start Session:
+        Gui, Add, Edit, x162 y149 w290 h20 , VautoStartSession, %autoStartSession%
         Gui, Add, Text, x22 y193 w100 h20 , Trigger Hotkey:
         Gui, Add, Hotkey, x122 y190 w100 h20 VconsoleHotkey, %consoleHotkey%
         Gui, Add, CheckBox, x22 y260 w100 h30 VstartHidden Checked%startHidden%, Start Hidden
